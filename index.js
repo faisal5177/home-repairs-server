@@ -39,7 +39,7 @@ async function run() {
     app.get('/services', async (req, res) => {
       const email = req.query.email;
       let query = {};
-      if(email) {
+      if (email) {
         query = { providerEmail: email };
       }
       const cursor = servicesCollection.find();
@@ -61,6 +61,15 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const result = await servicesCollection.findOne(query);
       res.send(result);
+    });
+
+    app.get('/service-application/services/:service_id', async (req, res) => {
+      const serviceId = req.params.service_id;
+      const query = { service_id: serviceId };
+      const applications = await serviceApplicationCollection
+        .find(query)
+        .toArray();
+      res.send(applications);
     });
 
     // Service application apis
@@ -90,15 +99,14 @@ async function run() {
       const application = req.body;
       application.createdAt = new Date();
       const result = await serviceApplicationCollection.insertOne(application);
-      
+
       const id = application.service_id;
       const query = { _id: new ObjectId(id) };
       const service = await servicesCollection.findOne(query);
       let newCount = 0;
       if (service.applicationCount) {
         newCount = service.applicationCount + 1;
-      }
-      else {
+      } else {
         newCount = 1;
       }
 
