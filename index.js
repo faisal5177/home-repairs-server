@@ -42,11 +42,13 @@ async function run() {
       res.send(result);
     });
 
+    //  Create a new service
     app.post('/services', async (req, res) => {
-      const service = req.body;
-      service.createdAt = new Date();
-      const result = await servicesCollection.insertOne(service);
-      res.send(result);
+      const newService = req.body;
+      const result = await servicesCollection.insertOne(newService);
+      result.insertedId
+        ? res.status(201).json({ serviceId: result.insertedId })
+        : res.status(400).json({ error: 'Service creation failed' });
     });
 
     app.get('/services/:id', async (req, res) => {
@@ -93,7 +95,6 @@ async function run() {
       const result = await serviceApplicationCollection.deleteOne(query);
       res.send(result);
     });
-    
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
