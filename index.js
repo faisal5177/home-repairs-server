@@ -32,10 +32,20 @@ async function run() {
 
     // Service related apis
     const servicesCollection = client.db('homeRepairs').collection('services');
+    const serviceApplicationCollection = client
+      .db('homeRepairs')
+      .collection('service_applications');
 
     app.get('/services', async (req, res) => {
       const cursor = servicesCollection.find();
       const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.post('/services', async (req, res) => {
+      const service = req.body;
+      service.createdAt = new Date();
+      const result = await servicesCollection.insertOne(service);
       res.send(result);
     });
 
@@ -46,7 +56,44 @@ async function run() {
       res.send(result);
     });
 
+    // Service application apis
+    app.get('/service-application', async (req, res) => {
+      const email = req.query.email;
+      const query = { applicant_email: email };
+      const result = await serviceApplicationCollection.find(query).toArray();
 
+      for (const application of result) {
+        console.log(application.service_id);
+        const query1 = { _id: new ObjectId(application.service_id) };
+        const service = await servicesCollection.findOne(query1);
+        if (service) {
+          application.serviceName = service.serviceName;
+          application.providerImage = service.providerImage;
+          application.serviceArea = service.serviceArea;
+          application.providerName = service.providerName;
+          application.price = service.price;
+          application.createdAt = service.createdAt;
+        }
+      }
+
+      res.send(result);
+    });
+
+    app.post('/service-applications', async (req, res) => {
+      const application = req.body;
+      application.createdAt = new Date();
+      const result = await serviceApplicationCollection.insertOne(application);
+      res.send(result);
+    });
+
+    // Delete service application by ID
+    app.delete('/service-application/:id', async (req, res) => {
+      const { id } = req.params;
+      const query = { _id: new ObjectId(id) };
+      const result = await serviceApplicationCollection.deleteOne(query);
+      res.send(result);
+    });
+    
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
