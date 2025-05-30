@@ -37,6 +37,11 @@ async function run() {
       .collection('service_applications');
 
     app.get('/services', async (req, res) => {
+      const email = req.query.email;
+      let query = {};
+      if(email) {
+        query = { providerEmail: email };
+      }
       const cursor = servicesCollection.find();
       const result = await cursor.toArray();
       res.send(result);
@@ -85,6 +90,31 @@ async function run() {
       const application = req.body;
       application.createdAt = new Date();
       const result = await serviceApplicationCollection.insertOne(application);
+      
+      const id = application.service_id;
+      const query = { _id: new ObjectId(id) };
+      const service = await servicesCollection.findOne(query);
+      let newCount = 0;
+      if (service.applicationCount) {
+        newCount = service.applicationCount + 1;
+      }
+      else {
+        newCount = 1;
+      }
+
+      // Update the service application count
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          applicationCount: newCount,
+        },
+      };
+
+      const updateResult = await servicesCollection.updateOne(
+        filter,
+        updateDoc
+      );
+
       res.send(result);
     });
 
