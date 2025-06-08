@@ -160,6 +160,38 @@ async function run() {
       res.send(result);
     });
 
+    // ✅ UPDATE service (location & date)
+    app.put('/services/:id', async (req, res) => {
+      const { id } = req.params;
+      const { serviceArea, applicationDate } = req.body;
+
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send('Invalid service ID');
+      }
+
+      const updateFields = {};
+      if (typeof serviceArea === 'string')
+        updateFields.serviceArea = serviceArea;
+      if (typeof applicationDate === 'string')
+        updateFields.applicationDate = applicationDate;
+
+      try {
+        const result = await servicesCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateFields }
+        );
+
+        if (result.modifiedCount === 0) {
+          return res.status(404).send('Service not found or no change made.');
+        }
+
+        res.send({ success: true, message: 'Service updated successfully' });
+      } catch (error) {
+        console.error('Error updating service:', error);
+        res.status(500).send('Internal server error');
+      }
+    });
+
     // DELETE route in Express
     app.delete('/services/:id', async (req, res) => {
       const { id } = req.params;
