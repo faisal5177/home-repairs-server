@@ -70,26 +70,25 @@ async function run() {
     app.post('/jwt', async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: '5h'
+        expiresIn: '5h',
       });
 
       res
-      .cookie('token', token, {
-        httpOnly: true, 
-        secure: false
-      })
-      .send({ success: true });
-
+        .cookie('token', token, {
+          httpOnly: true,
+          secure: false,
+        })
+        .send({ success: true });
     });
 
-    app.post('/logout', (req, res) => {	
+    app.post('/logout', (req, res) => {
       res
         .clearCookie('token', {
-          httpOnly: true, 
-          secure: false })
+          httpOnly: true,
+          secure: false,
+        })
         .send({ success: true, message: 'Logged out successfully' });
-    }
-    );
+    });
 
     // Get all services or by provider email
     app.get('/services', async (req, res) => {
@@ -136,9 +135,14 @@ async function run() {
     });
 
     // Get applications by applicant email
-    app.get('/service-application', async (req, res) => {
+    app.get('/service-application', verifyToken, async (req, res) => {
       const email = req.query.email;
       const query = { applicant_email: email };
+      // console.log(req.cookies?.token)
+      if (req.user?.email !== email) {
+        return res.status(403).send({ message: 'Forbidden access' });
+      }
+
       const result = await serviceApplicationCollection.find(query).toArray();
 
       for (const application of result) {
