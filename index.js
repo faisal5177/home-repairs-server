@@ -9,17 +9,16 @@ const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const corsOptions = {
-  origin: 'http://localhost:5173',
-  methods: 'GET, POST, PUT, DELETE',
+  origin: [
+    'http://localhost:5173',
+    'https://home-repairs-57fcc.web.app',
+    'https://home-repairs-57fcc.firebaseapp.com',
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   credentials: true,
 };
 
-app.use(
-  cors({
-    origin: ['http://localhost:5173'],
-    credentials: true,
-  })
-);
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -90,18 +89,30 @@ async function run() {
         .send({ success: true, message: 'Logged out successfully' });
     });
 
-    // Get all services or by provider email
-    app.get('/services', async (req, res) => {
-      const providerEmail = req.query.providerEmail;
-      let query = {};
-      if (providerEmail) {
-        query = {
-          providerEmail,
-          applicationCount: { $gt: 0 },
-        };
+    app.get('/services', logger, async (req, res) => {
+      try {
+        const providerEmail = req.query.providerEmail;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 4;
+        const skip = (page - 1) * limit;
+
+        let query = {};
+        if (providerEmail) {
+          query = {
+            providerEmail,
+            applicationCount: { $gt: 0 },
+          };
+        }
+
+        const result = await servicesCollection
+          .find(query)
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ error: 'Internal Server Error' });
       }
-      const result = await servicesCollection.find(query).toArray();
-      res.send(result);
     });
 
     // Get service by ID
@@ -111,6 +122,16 @@ async function run() {
         _id: new ObjectId(id),
       });
       res.send(result);
+    });
+
+    // Get service count
+    app.get('/services-count', async (req, res) => {
+      try {
+        const count = await servicesCollection.estimatedDocumentCount();
+        res.send({ count });
+      } catch (err) {
+        res.status(500).send({ error: 'Internal Server Error' });
+      }
     });
 
     // Create a new service
