@@ -8,6 +8,7 @@ require('dotenv').config();
 const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
+// --- CORS Setup ---
 const corsOptions = {
   origin: [
     'http://localhost:5173',
@@ -22,6 +23,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
 
+// --- Middleware ---
 const logger = (req, res, next) => {
   console.log(`inside the logger`);
   next();
@@ -29,19 +31,16 @@ const logger = (req, res, next) => {
 
 const verifyToken = (req, res, next) => {
   const token = req?.cookies?.token;
+  if (!token) return res.status(401).send({ message: 'Unauthorized access' });
 
-  if (!token) {
-    return res.status(401).send({ message: 'unAuthorized access' });
-  }
   jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(401).send({ message: 'unauthorized access' });
-    }
+    if (err) return res.status(401).send({ message: 'Unauthorized access' });
     req.user = decoded;
     next();
   });
 };
 
+// --- MongoDB Setup ---
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.8kzkr.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -55,17 +54,14 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
-    await client.db('admin').command({ ping: 1 });
-    console.log(
-      'Pinged your deployment. You successfully connected to MongoDB!'
-    );
+    console.log('Connected to MongoDB');
 
     const servicesCollection = client.db('homeRepairs').collection('services');
     const serviceApplicationCollection = client
       .db('homeRepairs')
       .collection('service_applications');
 
-    // Auth related APIs
+    // --- Auth APIs ---
     app.post('/jwt', async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
@@ -76,7 +72,7 @@ async function run() {
         .cookie('token', token, {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+          sameSite: 'strict',
         })
         .send({ success: true });
     });
@@ -86,11 +82,12 @@ async function run() {
         .clearCookie('token', {
           httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+          sameSite: 'strict',
         })
         .send({ success: true, message: 'Logged out successfully' });
     });
 
+    // --- Get all services ---
     app.get('/services', logger, async (req, res) => {
       try {
         const providerEmail = req.query.providerEmail;
@@ -117,16 +114,19 @@ async function run() {
       }
     });
 
-    // Get service by ID
+    // --- Get service by ID ---
     app.get('/services/:id', async (req, res) => {
       const id = req.params.id;
+      if (!ObjectId.isValid(id))
+        return res.status(400).send({ message: 'Invalid ID format' });
+
       const result = await servicesCollection.findOne({
         _id: new ObjectId(id),
       });
       res.send(result);
     });
 
-    // Get service count
+    // --- Get total service count ---
     app.get('/services-count', async (req, res) => {
       try {
         const count = await servicesCollection.estimatedDocumentCount();
@@ -136,18 +136,19 @@ async function run() {
       }
     });
 
-    // Create a new service
+    // --- Create a new service ---
     app.post('/services', async (req, res) => {
       const newService = req.body;
       newService.createdAt = new Date().toISOString();
       newService.applicationCount = 0;
+
       const result = await servicesCollection.insertOne(newService);
       result.insertedId
         ? res.status(201).json({ serviceId: result.insertedId })
         : res.status(400).json({ error: 'Service creation failed' });
     });
 
-    // Get applications for a specific service
+    // --- Get applications for a specific service ---
     app.get('/service-application/services/:service_id', async (req, res) => {
       const serviceId = req.params.service_id;
       const query = { service_id: serviceId };
@@ -157,21 +158,26 @@ async function run() {
       res.send(applications);
     });
 
-    // Get applications by applicant email
+    // --- Get applications by applicant email (protected) ---
     app.get('/service-application', verifyToken, async (req, res) => {
       const email = req.query.email;
-      const query = { applicant_email: email };
-      // console.log(req.cookies?.token)
-      if (req.user?.email !== email) {
+      if (!email)
+        return res.status(400).send({ message: 'Email query missing' });
+      if (req.user?.email !== email)
         return res.status(403).send({ message: 'Forbidden access' });
-      }
 
-      const result = await serviceApplicationCollection.find(query).toArray();
+      const result = await serviceApplicationCollection
+        .find({ applicant_email: email })
+        .toArray();
 
       for (const application of result) {
-        const service = await servicesCollection.findOne({
-          _id: new ObjectId(application.service_id),
-        });
+        let service = null;
+        if (ObjectId.isValid(application.service_id)) {
+          service = await servicesCollection.findOne({
+            _id: new ObjectId(application.service_id),
+          });
+        }
+
         if (service) {
           Object.assign(application, {
             serviceName: service.serviceName,
@@ -187,7 +193,7 @@ async function run() {
       res.send(result);
     });
 
-    // Create a new service application
+    // --- Create a new application & update count ---
     app.post('/service-applications', async (req, res) => {
       const application = req.body;
       application.createdAt = new Date().toISOString();
@@ -195,21 +201,18 @@ async function run() {
 
       const result = await serviceApplicationCollection.insertOne(application);
 
-      // Update applicationCount in service
       const id = application.service_id;
-      const service = await servicesCollection.findOne({
-        _id: new ObjectId(id),
-      });
-      const newCount = (service?.applicationCount || 0) + 1;
-
-      await servicesCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { applicationCount: newCount } }
-      );
+      if (ObjectId.isValid(id)) {
+        await servicesCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $inc: { applicationCount: 1 } }
+        );
+      }
 
       res.send(result);
     });
 
+    // --- Update application status ---
     app.patch('/service-application/:id', async (req, res) => {
       const { id } = req.params;
       const { status } = req.body;
@@ -222,38 +225,38 @@ async function run() {
         { _id: new ObjectId(id) },
         {
           $set: {
-            status: status,
+            status,
             updatedAt: new Date(),
           },
         }
       );
 
-      if (result.modifiedCount > 0) {
-        res.send({ message: 'Application status updated successfully' });
-      } else {
-        res
-          .status(404)
-          .send({ message: 'Application not found or status unchanged' });
-      }
+      result.modifiedCount > 0
+        ? res.send({ message: 'Application status updated successfully' })
+        : res
+            .status(404)
+            .send({ message: 'Application not found or unchanged' });
     });
 
-    // Delete application by ID
+    // --- Delete application ---
     app.delete('/service-application/:id', async (req, res) => {
       const { id } = req.params;
+      if (!ObjectId.isValid(id))
+        return res.status(400).send({ message: 'Invalid ID' });
+
       const result = await serviceApplicationCollection.deleteOne({
         _id: new ObjectId(id),
       });
       res.send(result);
     });
 
-    // ✅ UPDATE service (location & date)
+    // --- Update service details ---
     app.put('/services/:id', async (req, res) => {
       const { id } = req.params;
       const { serviceArea, applicationDate } = req.body;
 
-      if (!ObjectId.isValid(id)) {
+      if (!ObjectId.isValid(id))
         return res.status(400).send('Invalid service ID');
-      }
 
       const updateFields = {};
       if (typeof serviceArea === 'string')
@@ -267,40 +270,38 @@ async function run() {
           { $set: updateFields }
         );
 
-        if (result.modifiedCount === 0) {
-          return res.status(404).send('Service not found or no change made.');
-        }
-
-        res.send({ success: true, message: 'Service updated successfully' });
+        result.modifiedCount === 0
+          ? res.status(404).send('Service not found or no change made.')
+          : res.send({
+              success: true,
+              message: 'Service updated successfully',
+            });
       } catch (error) {
         console.error('Error updating service:', error);
         res.status(500).send('Internal server error');
       }
     });
 
-    // DELETE route in Express
+    // --- Delete service ---
     app.delete('/services/:id', async (req, res) => {
       const { id } = req.params;
-
-      if (!ObjectId.isValid(id)) {
+      if (!ObjectId.isValid(id))
         return res.status(400).json({ error: 'Invalid service ID' });
-      }
 
       const result = await servicesCollection.deleteOne({
         _id: new ObjectId(id),
       });
 
-      if (result.deletedCount > 0) {
-        res.send({ message: 'Service deleted successfully' });
-      } else {
-        res.status(404).json({ error: 'Service not found' });
-      }
+      result.deletedCount > 0
+        ? res.send({ message: 'Service deleted successfully' })
+        : res.status(404).json({ error: 'Service not found' });
     });
   } finally {
-    // Keep connection alive
+    // Connection remains open
   }
 }
 
+// --- Start Server ---
 run().catch(console.dir);
 
 app.get('/', (req, res) => {
