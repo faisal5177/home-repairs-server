@@ -89,30 +89,35 @@ async function run() {
 
     // --- Get all services ---
     app.get('/services', logger, async (req, res) => {
-      try {
-        const providerEmail = req.query.providerEmail;
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 4;
-        const skip = (page - 1) * limit;
+  try {
+    const providerEmail = req.query.providerEmail;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 4;
+    const skip = (page - 1) * limit;
+    const sortByPrice = req.query.sort === 'true'; // Check for sort query
 
-        let query = {};
-        if (providerEmail) {
-          query = {
-            providerEmail,
-            applicationCount: { $gt: 0 },
-          };
-        }
+    let query = {};
+    if (providerEmail) {
+      query = {
+        providerEmail,
+        applicationCount: { $gt: 0 },
+      };
+    }
 
-        const result = await servicesCollection
-          .find(query)
-          .skip(skip)
-          .limit(limit)
-          .toArray();
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ error: 'Internal Server Error' });
-      }
-    });
+    const sortOptions = sortByPrice ? { price: 1 } : {}; // ASC by price
+
+    const result = await servicesCollection
+      .find(query)
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: 'Internal Server Error' });
+  }
+});
 
     // --- Get service by ID ---
     app.get('/services/:id', async (req, res) => {
